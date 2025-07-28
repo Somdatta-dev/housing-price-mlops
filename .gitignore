@@ -209,6 +209,9 @@ outputs/
 *.swo
 *~
 
+# Task management (local only)
+task.md
+
 # Emacs
 *~
 \#*\#

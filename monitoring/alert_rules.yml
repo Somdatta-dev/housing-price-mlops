@@ -1,0 +1,128 @@
+# Prometheus alert rules for Housing Price Prediction MLOps Pipeline
+groups:
+  - name: housing_api_alerts
+    rules:
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, rate(housing_api_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time detected"
+          description: "95th percentile response time is {{ $value }}s for the last 5 minutes"
+
+      - alert: HighAPIErrorRate
+        expr: rate(housing_api_errors_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate detected"
+          description: "API error rate is {{ $value }} errors/second"
+
+      - alert: APIDown
+        expr: up{job="housing-api"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Housing API is down"
+          description: "The Housing Price Prediction API has been down for more than 30 seconds"
+
+  - name: system_alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: housing_system_cpu_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% for the last 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: housing_system_memory_usage_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}% for the last 5 minutes"
+
+      - alert: CriticalMemoryUsage
+        expr: housing_system_memory_usage_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage detected"
+          description: "Memory usage is {{ $value }}% - system may become unstable"
+
+  - name: model_alerts
+    rules:
+      - alert: SlowModelInference
+        expr: histogram_quantile(0.95, rate(housing_model_inference_duration_seconds_bucket[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow model inference detected"
+          description: "95th percentile model inference time is {{ $value }}s"
+
+      - alert: LowPredictionRate
+        expr: rate(housing_model_predictions_total[5m]) < 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low prediction rate detected"
+          description: "Model prediction rate is {{ $value }} predictions/second"
+
+      - alert: UnhealthyApplication
+        expr: housing_app_health_status{component="overall"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application health check failed"
+          description: "The application health status is unhealthy"
+
+  - name: data_quality_alerts
+    rules:
+      - alert: LowDataQuality
+        expr: housing_data_quality_score < 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low data quality detected"
+          description: "Data quality score is {{ $value }} for dataset {{ $labels.dataset }}"
+
+      - alert: HighDataDrift
+        expr: housing_data_drift_score > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High data drift detected"
+          description: "Data drift score is {{ $value }} for feature {{ $labels.feature }}"
+
+  - name: model_performance_alerts
+    rules:
+      - alert: ModelAccuracyDrop
+        expr: housing_model_accuracy{metric="r2_score"} < 0.7
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model accuracy dropped significantly"
+          description: "Model {{ $labels.model_name }} R² score is {{ $value }}"
+
+      - alert: HighModelError
+        expr: housing_model_accuracy{metric="rmse"} > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High model error detected"
+          description: "Model {{ $labels.model_name }} RMSE is {{ $value }}"

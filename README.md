@@ -11,11 +11,13 @@ This project demonstrates a production-ready machine learning pipeline for predi
 - **Data Versioning**: DVC integration for dataset management
 - **Experiment Tracking**: MLflow for model versioning and metrics
 - **Model Development**: Multiple ML algorithms with hyperparameter tuning
-- **REST API**: FastAPI-based prediction service
+- **REST API**: FastAPI-based prediction service with comprehensive endpoints
 - **Containerization**: Docker deployment with multi-stage builds
 - **CI/CD Pipeline**: GitHub Actions for automated testing and deployment
-- **Monitoring**: Comprehensive logging and metrics collection
+- **Monitoring & Logging**: Structured logging, Prometheus metrics, Grafana dashboards
 - **Input Validation**: Pydantic schemas for robust data validation
+- **Alerting System**: Real-time monitoring with automated alerts
+- **Web Dashboard**: Interactive monitoring dashboard with real-time metrics
 
 ## 🏗️ Architecture
 
@@ -95,6 +97,8 @@ This project demonstrates a production-ready machine learning pipeline for predi
 4. **Access the application**
    - API Documentation: http://localhost:8000/docs
    - MLflow UI: http://localhost:5000
+   - Monitoring Dashboard: http://localhost:3000
+   - Prometheus Metrics: http://localhost:8000/metrics
 
 ### Docker Deployment
 
@@ -107,6 +111,25 @@ This project demonstrates a production-ready machine learning pipeline for predi
    ```bash
    docker run -p 8000:8000 housing-price-api
    ```
+
+### Complete Monitoring Stack
+
+1. **Start the full monitoring stack**
+   ```bash
+   python scripts/setup_monitoring.py
+   ```
+
+2. **Or use Docker Compose**
+   ```bash
+   docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+   ```
+
+3. **Access monitoring services**
+   - Housing API: http://localhost:8000
+   - Monitoring Dashboard: http://localhost:3000
+   - Grafana: http://localhost:3001 (admin/admin)
+   - Prometheus: http://localhost:9090
+   - Alertmanager: http://localhost:9093
 
 ## 📊 API Usage
 
@@ -166,10 +189,13 @@ housing-price-mlops/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml
-│       └── cd.yml
+│       ├── cd.yml
+│       └── model-retrain.yml
 ├── data/
 │   ├── raw/
 │   ├── processed/
+│   ├── external/
+│   ├── interim/
 │   └── .gitkeep
 ├── src/
 │   ├── api/
@@ -178,31 +204,43 @@ housing-price-mlops/
 │   │   └── models.py
 │   ├── data/
 │   │   ├── __init__.py
-│   │   └── preprocessing.py
+│   │   └── load_data.py
 │   ├── models/
 │   │   ├── __init__.py
 │   │   └── train_model.py
 │   └── utils/
 │       ├── __init__.py
-│       └── logging.py
+│       ├── logging.py
+│       ├── monitoring.py
+│       ├── prometheus_metrics.py
+│       └── dashboard.py
 ├── tests/
 │   ├── test_api.py
 │   ├── test_models.py
-│   └── test_preprocessing.py
-├── notebooks/
-│   └── exploratory_analysis.ipynb
-├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
+│   └── test_data.py
+├── monitoring/
+│   ├── grafana-dashboard.json
+│   ├── prometheus.yml
+│   ├── alert_rules.yml
+│   ├── alertmanager.yml
+│   └── docker-compose.monitoring.yml
+├── scripts/
+│   └── setup_monitoring.py
 ├── configs/
 │   ├── config.yaml
 │   └── logging.conf
+├── logs/
+├── models/
 ├── .dvcignore
 ├── .gitignore
+├── .dockerignore
 ├── dvc.yaml
 ├── params.yaml
 ├── requirements.txt
 ├── setup.py
+├── Dockerfile
+├── Dockerfile.monitoring
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -240,22 +278,52 @@ pytest tests/ --cov=src --cov-report=html
 pytest tests/test_api.py -v
 ```
 
-## 📈 Monitoring
+## 📈 Monitoring & Observability
+
+### Comprehensive Monitoring Stack
+
+- **Prometheus**: Metrics collection and alerting
+- **Grafana**: Interactive dashboards and visualizations
+- **Custom Dashboard**: Real-time monitoring web interface
+- **Structured Logging**: JSON-formatted logs with context
+- **Database Logging**: Persistent storage of predictions and metrics
+- **Health Checks**: Multi-component system health monitoring
+- **Alerting**: Automated alerts for system anomalies
 
 ### Metrics Collected
 
-- **Request Metrics**: Count, latency, error rates
-- **Model Metrics**: Prediction distribution, confidence scores
-- **System Metrics**: CPU, memory, disk usage
-- **Business Metrics**: Prediction accuracy over time
+- **API Metrics**: Request count, response time, error rates, throughput
+- **Model Metrics**: Prediction distribution, inference time, model accuracy
+- **System Metrics**: CPU usage, memory usage, disk usage, uptime
+- **Business Metrics**: Prediction trends, data quality scores, drift detection
+- **Custom Metrics**: Application-specific KPIs and performance indicators
 
-### Logging
+### Monitoring Endpoints
 
-Structured JSON logging with the following levels:
-- **INFO**: Request/response logging
-- **WARNING**: Performance degradation
-- **ERROR**: Prediction failures
-- **DEBUG**: Detailed execution traces
+- **Prometheus Metrics**: `GET /metrics` - Prometheus-compatible metrics
+- **Health Check**: `GET /health` - Basic service health
+- **Detailed Health**: `GET /health/detailed` - Component-level health status
+- **Metrics Summary**: `GET /monitoring/metrics/summary` - Aggregated metrics
+- **Active Alerts**: `GET /monitoring/alerts` - Current system alerts
+- **Dashboard**: `GET /monitoring/dashboard` - Web-based monitoring interface
+
+### Logging Capabilities
+
+- **Structured JSON Logging**: Machine-readable log format
+- **Request/Response Logging**: Complete API interaction tracking
+- **Prediction Logging**: Model inference tracking with metadata
+- **Performance Logging**: Response time and resource usage tracking
+- **Error Logging**: Comprehensive error tracking and debugging
+- **Database Logging**: Persistent log storage with SQLite
+- **Log Rotation**: Automated log management to prevent disk issues
+
+### Alerting System
+
+- **Real-time Monitoring**: Continuous system health assessment
+- **Threshold-based Alerts**: Configurable alert conditions
+- **Multi-channel Notifications**: Email, webhook, and dashboard alerts
+- **Alert Escalation**: Severity-based alert routing
+- **Alert History**: Complete audit trail of system events
 
 ## 🚀 CI/CD Pipeline
 

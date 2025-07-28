@@ -16,9 +16,9 @@ import mlflow
 import mlflow.sklearn
 import pandas as pd
 import numpy as np
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, validator
 import yaml
 from pathlib import Path
@@ -26,9 +26,20 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import monitoring and logging utilities
+from utils.logging import get_logger, log_prediction, log_api_request
+from utils.monitoring import metrics_collector, health_checker, alert_manager
+from utils.prometheus_metrics import (
+    get_prometheus_metrics,
+    get_prometheus_content_type,
+    record_request_metrics,
+    record_prediction_metrics,
+    update_health_status
+)
+from utils.dashboard import run_dashboard
+
+# Set up structured logging
+logger = get_logger(__name__)
 
 def load_config():
     """Load configuration from config.yaml"""
@@ -56,6 +67,39 @@ app.add_middleware(
     allow_methods=config['api']['cors']['allow_methods'],
     allow_headers=config['api']['cors']['allow_headers'],
 )
+
+# Add monitoring middleware
+@app.middleware("http")
+async def monitoring_middleware(request: Request, call_next):
+    """Middleware to collect metrics and log requests"""
+    start_time = time.time()
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Calculate duration
+    duration = time.time() - start_time
+    
+    # Extract request info
+    method = request.method
+    endpoint = str(request.url.path)
+    status_code = response.status_code
+    
+    # Log API request
+    log_api_request(
+        method=method,
+        endpoint=endpoint,
+        status_code=status_code,
+        response_time_ms=duration * 1000,
+        user_agent=request.headers.get("user-agent", ""),
+        ip_address=request.client.host if request.client else "unknown"
+    )
+    
+    # Record metrics
+    metrics_collector.record_api_request(method, endpoint, status_code, duration)
+    record_request_metrics(method, endpoint, status_code, duration)
+    
+    return response
 
 # Global variables for model and scaler
 model = None
@@ -230,6 +274,9 @@ async def startup_event():
     """Initialize the application"""
     logger.info("Starting Housing Price Prediction API...")
     
+    # Initialize monitoring
+    metrics_collector.start_background_collection()
+    
     # Load the model
     model_loaded = await load_model()
     
@@ -237,6 +284,16 @@ async def startup_event():
         logger.warning("Failed to load model. API will start but predictions will fail.")
     
     logger.info("API startup completed")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on application shutdown"""
+    logger.info("Shutting down Housing Price Prediction API...")
+    
+    # Stop background monitoring
+    metrics_collector.stop_background_collection()
+    
+    logger.info("API shutdown completed")
 
 @app.get("/", response_model=Dict[str, str])
 async def root():
@@ -268,7 +325,7 @@ async def predict_house_price(features: HousingFeatures):
     
     if model is None:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="Model not loaded. Please check the health endpoint."
         )
     
@@ -284,7 +341,25 @@ async def predict_house_price(features: HousingFeatures):
         # Generate unique prediction ID
         prediction_id = str(uuid.uuid4())
         
-        # Log prediction (in a real system, this might go to a database)
+        # Log prediction to database and structured logs
+        log_prediction(
+            prediction_id=prediction_id,
+            model_name=model_name,
+            model_version=model_version or "unknown",
+            input_features=features.dict(),
+            prediction_value=float(prediction),
+            confidence_score=None,
+            processing_time_ms=prediction_time * 1000
+        )
+        
+        # Record metrics
+        metrics_collector.record_model_prediction(
+            model_name=model_name,
+            prediction_value=float(prediction),
+            inference_time=prediction_time
+        )
+        record_prediction_metrics(model_name, float(prediction), prediction_time)
+        
         logger.info(f"Prediction {prediction_id}: {prediction:.4f} (took {prediction_time:.4f}s)")
         
         return PredictionResponse(
@@ -305,7 +380,7 @@ async def predict_batch(request: BatchPredictionRequest):
     
     if model is None:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="Model not loaded. Please check the health endpoint."
         )
     
@@ -320,9 +395,23 @@ async def predict_batch(request: BatchPredictionRequest):
         # Make batch prediction
         batch_predictions = model.predict(input_data)
         
-        # Create individual prediction responses
+        # Create individual prediction responses and log each
         for i, (instance, prediction) in enumerate(zip(request.instances, batch_predictions)):
             prediction_id = f"{batch_id}_{i}"
+            
+            # Log individual prediction
+            log_prediction(
+                prediction_id=prediction_id,
+                model_name=model_name,
+                model_version=model_version or "unknown",
+                input_features=instance.dict(),
+                prediction_value=float(prediction),
+                confidence_score=None,
+                processing_time_ms=0  # Individual time not tracked in batch
+            )
+            
+            # Record metrics for each prediction
+            record_prediction_metrics(model_name, float(prediction), 0)
             
             predictions.append(PredictionResponse(
                 prediction=float(prediction),
@@ -333,6 +422,13 @@ async def predict_batch(request: BatchPredictionRequest):
             ))
         
         processing_time = time.time() - start_time
+        
+        # Record batch metrics
+        metrics_collector.record_batch_prediction(
+            model_name=model_name,
+            batch_size=len(predictions),
+            total_processing_time=processing_time
+        )
         
         logger.info(f"Batch prediction {batch_id}: {len(predictions)} instances processed in {processing_time:.4f}s")
         
@@ -406,6 +502,66 @@ async def reload_model():
     except Exception as e:
         logger.error(f"Model reload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Model reload failed: {str(e)}")
+
+# Monitoring and Metrics Endpoints
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics endpoint"""
+    metrics_data = get_prometheus_metrics()
+    return PlainTextResponse(
+        content=metrics_data,
+        media_type=get_prometheus_content_type()
+    )
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check with component status"""
+    health_status = health_checker.run_health_checks()
+    
+    # Update Prometheus health metrics
+    update_health_status(health_status)
+    
+    return health_status
+
+@app.get("/monitoring/dashboard")
+async def monitoring_dashboard():
+    """Redirect to monitoring dashboard"""
+    return {
+        "message": "Monitoring dashboard available",
+        "dashboard_url": "http://localhost:3000",
+        "note": "Start dashboard with: python -m src.utils.dashboard"
+    }
+
+@app.get("/monitoring/metrics/summary")
+async def metrics_summary():
+    """Get metrics summary"""
+    summary = metrics_collector.get_metrics_summary(24)
+    return summary
+
+@app.get("/monitoring/alerts")
+async def active_alerts():
+    """Get active alerts"""
+    alerts = list(alert_manager.active_alerts.values())
+    return {"alerts": alerts, "count": len(alerts)}
+
+@app.post("/monitoring/alerts/test")
+async def test_alert():
+    """Test alert system"""
+    test_alert = {
+        "name": "test_alert",
+        "metric_name": "test_metric",
+        "threshold": 100,
+        "current_value": 150,
+        "severity": "warning"
+    }
+    
+    alert_manager.trigger_alert(**test_alert)
+    
+    return {
+        "message": "Test alert triggered",
+        "alert": test_alert
+    }
 
 # Error handlers
 @app.exception_handler(ValueError)
