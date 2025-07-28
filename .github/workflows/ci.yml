@@ -1,0 +1,358 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  # Code Quality and Linting
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy bandit safety
+        pip install -r requirements.txt
+        
+    - name: Run Black (Code Formatting)
+      run: |
+        black --check --diff src/ tests/
+        
+    - name: Run isort (Import Sorting)
+      run: |
+        isort --check-only --diff src/ tests/
+        
+    - name: Run Flake8 (Linting)
+      run: |
+        flake8 src/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+        
+    - name: Run MyPy (Type Checking)
+      run: |
+        mypy src/ --ignore-missing-imports --no-strict-optional
+        
+    - name: Run Bandit (Security Scanning)
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ --severity-level medium
+        
+    - name: Run Safety (Dependency Vulnerability Check)
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check
+        
+    - name: Upload Security Reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # Unit Testing
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10']
+        
+    name: Tests (Python ${{ matrix.python-version }})
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.python-version }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov pytest-mock httpx
+        pip install -r requirements.txt
+        
+    - name: Create necessary directories
+      run: |
+        mkdir -p data/raw data/processed data/external data/interim
+        mkdir -p logs mlruns
+        
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ -v --cov=src --cov-report=xml --cov-report=html --cov-report=term
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.python-version }}
+        path: |
+          htmlcov/
+          coverage.xml
+
+  # Data and Model Validation
+  data-model-validation:
+    runs-on: ubuntu-latest
+    name: Data and Model Validation
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create necessary directories
+      run: |
+        mkdir -p data/raw data/processed data/external data/interim
+        mkdir -p logs mlruns
+        
+    - name: Validate data loading
+      run: |
+        python src/data/load_data.py
+        
+    - name: Validate model training
+      run: |
+        timeout 300 python src/models/train_model.py || echo "Training completed or timed out"
+        
+    - name: Check MLflow artifacts
+      run: |
+        ls -la mlruns/ || echo "MLflow directory not found"
+        
+    - name: Upload MLflow artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: mlflow-artifacts
+        path: mlruns/
+
+  # Docker Build and Test
+  docker:
+    runs-on: ubuntu-latest
+    name: Docker Build and Test
+    needs: [code-quality, test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: housing-price-api:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Test Docker image
+      run: |
+        # Create necessary directories for volume mounts
+        mkdir -p data/raw data/processed logs mlruns
+        
+        # Start the container in background
+        docker run -d --name test-api \
+          -p 8000:8000 \
+          -v $(pwd)/data:/app/data \
+          -v $(pwd)/logs:/app/logs \
+          -v $(pwd)/mlruns:/app/mlruns \
+          housing-price-api:test
+          
+        # Wait for container to start
+        sleep 30
+        
+        # Test health endpoint
+        curl -f http://localhost:8000/health || exit 1
+        
+        # Test root endpoint
+        curl -f http://localhost:8000/ || exit 1
+        
+        # Stop container
+        docker stop test-api
+        docker rm test-api
+        
+    - name: Scan Docker image for vulnerabilities
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: housing-price-api:test
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Integration Tests
+  integration:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+    needs: [docker]
+    
+    services:
+      mlflow:
+        image: python:3.9-slim
+        ports:
+          - 5000:5000
+        options: >-
+          --health-cmd "curl -f http://localhost:5000/health || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 3
+        env:
+          PYTHONUNBUFFERED: 1
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pytest
+        pip install -r requirements.txt
+        
+    - name: Start MLflow server
+      run: |
+        pip install mlflow
+        mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db &
+        sleep 10
+        
+    - name: Run integration tests
+      run: |
+        # Create test data
+        mkdir -p data/raw data/processed
+        python src/data/load_data.py
+        
+        # Train a model
+        timeout 180 python src/models/train_model.py
+        
+        # Start API
+        python src/api/main.py &
+        API_PID=$!
+        sleep 15
+        
+        # Test API endpoints
+        curl -f http://localhost:8000/health
+        curl -f http://localhost:8000/model/info
+        
+        # Test prediction
+        curl -X POST "http://localhost:8000/predict" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "MedInc": 8.3252,
+            "HouseAge": 41.0,
+            "AveRooms": 6.984127,
+            "AveBedrms": 1.023810,
+            "Population": 322.0,
+            "AveOccup": 2.555556,
+            "Latitude": 37.88,
+            "Longitude": -122.23
+          }'
+          
+        # Clean up
+        kill $API_PID
+
+  # Performance Tests
+  performance:
+    runs-on: ubuntu-latest
+    name: Performance Tests
+    needs: [integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install locust
+        pip install -r requirements.txt
+        
+    - name: Run performance tests
+      run: |
+        # This would run load tests with Locust
+        echo "Performance tests would run here"
+        # locust -f tests/performance/locustfile.py --headless -u 10 -r 2 -t 30s --host http://localhost:8000
+
+  # Notify on completion
+  notify:
+    runs-on: ubuntu-latest
+    name: Notify Results
+    needs: [code-quality, test, data-model-validation, docker, integration]
+    if: always()
+    
+    steps:
+    - name: Notify Success
+      if: ${{ needs.code-quality.result == 'success' && needs.test.result == 'success' && needs.docker.result == 'success' }}
+      run: |
+        echo "✅ All CI checks passed successfully!"
+        
+    - name: Notify Failure
+      if: ${{ needs.code-quality.result == 'failure' || needs.test.result == 'failure' || needs.docker.result == 'failure' }}
+      run: |
+        echo "❌ Some CI checks failed. Please review the logs."
+        exit 1

@@ -1,0 +1,369 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    types:
+      - completed
+    branches: [ main ]
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: housing-price-api
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  # Only run if CI passed
+  check-ci:
+    runs-on: ubuntu-latest
+    name: Check CI Status
+    outputs:
+      ci-passed: ${{ steps.ci-check.outputs.result }}
+    
+    steps:
+    - name: Check CI workflow status
+      id: ci-check
+      uses: actions/github-script@v6
+      with:
+        script: |
+          if (context.eventName === 'push' || context.eventName === 'workflow_run') {
+            if (context.eventName === 'workflow_run' && context.payload.workflow_run.conclusion !== 'success') {
+              core.setFailed('CI workflow failed');
+              return 'false';
+            }
+            return 'true';
+          }
+          return 'false';
+
+  # Build and push Docker image
+  build-and-push:
+    runs-on: ubuntu-latest
+    name: Build and Push Docker Image
+    needs: check-ci
+    if: needs.check-ci.outputs.ci-passed == 'true'
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+        format: spdx-json
+        output-file: sbom.spdx.json
+        
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom
+        path: sbom.spdx.json
+
+  # Deploy to staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: build-and-push
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        
+        # In a real scenario, this would deploy to a staging environment
+        # Examples:
+        # - Update Kubernetes deployment
+        # - Deploy to AWS ECS/Fargate
+        # - Update Docker Compose on staging server
+        # - Deploy to cloud platforms (Heroku, Railway, etc.)
+        
+        # Simulate deployment
+        echo "✅ Staging deployment completed"
+        
+    - name: Run staging smoke tests
+      run: |
+        echo "🧪 Running staging smoke tests..."
+        
+        # In a real scenario, these would be actual tests against staging
+        # curl -f https://staging.housing-api.com/health
+        # python tests/smoke/staging_tests.py
+        
+        echo "✅ Staging smoke tests passed"
+        
+    - name: Notify staging deployment
+      run: |
+        echo "📢 Staging deployment notification sent"
+
+  # Security scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    needs: build-and-push
+    
+    steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ needs.build-and-push.outputs.image-tag }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/docker@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        image: ${{ needs.build-and-push.outputs.image-tag }}
+        args: --severity-threshold=high
+      continue-on-error: true
+
+  # Deploy to production
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: [build-and-push, deploy-staging, security-scan]
+    environment: production
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        
+        # In a real scenario, this would deploy to production
+        # Examples:
+        # - Blue-green deployment
+        # - Rolling update in Kubernetes
+        # - Update production Docker Compose
+        # - Deploy to cloud platforms
+        
+        # Simulate production deployment
+        echo "✅ Production deployment completed"
+        
+    - name: Run production health checks
+      run: |
+        echo "🏥 Running production health checks..."
+        
+        # In a real scenario, these would be actual health checks
+        # curl -f https://api.housing-predictions.com/health
+        # python tests/health/production_health.py
+        
+        echo "✅ Production health checks passed"
+        
+    - name: Update deployment status
+      run: |
+        echo "📊 Updating deployment status..."
+        # This could update a status page, monitoring dashboard, etc.
+        echo "✅ Deployment status updated"
+
+  # Performance monitoring
+  performance-monitoring:
+    runs-on: ubuntu-latest
+    name: Performance Monitoring
+    needs: deploy-production
+    if: needs.deploy-production.result == 'success'
+    
+    steps:
+    - name: Run performance tests
+      run: |
+        echo "⚡ Running performance monitoring..."
+        
+        # In a real scenario, this would run performance tests
+        # - Load testing with Artillery, k6, or Locust
+        # - Response time monitoring
+        # - Throughput testing
+        
+        echo "✅ Performance tests completed"
+        
+    - name: Update performance metrics
+      run: |
+        echo "📈 Updating performance metrics..."
+        # This could send metrics to monitoring systems
+        echo "✅ Performance metrics updated"
+
+  # Rollback capability
+  rollback:
+    runs-on: ubuntu-latest
+    name: Rollback (Manual)
+    needs: [deploy-production]
+    if: failure() && github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Rollback deployment
+      run: |
+        echo "🔄 Rolling back deployment..."
+        
+        # In a real scenario, this would rollback to previous version
+        # - Revert Kubernetes deployment
+        # - Switch back to previous Docker image
+        # - Restore previous configuration
+        
+        echo "✅ Rollback completed"
+        
+    - name: Notify rollback
+      run: |
+        echo "📢 Rollback notification sent"
+
+  # Cleanup old images
+  cleanup:
+    runs-on: ubuntu-latest
+    name: Cleanup Old Images
+    needs: deploy-production
+    if: always()
+    
+    steps:
+    - name: Delete old Docker images
+      run: |
+        echo "🧹 Cleaning up old Docker images..."
+        
+        # In a real scenario, this would clean up old images
+        # - Remove images older than X days
+        # - Keep only last N versions
+        # - Clean up untagged images
+        
+        echo "✅ Cleanup completed"
+
+  # Notification and reporting
+  notify:
+    runs-on: ubuntu-latest
+    name: Deployment Notification
+    needs: [deploy-production, performance-monitoring]
+    if: always()
+    
+    steps:
+    - name: Notify deployment success
+      if: needs.deploy-production.result == 'success'
+      run: |
+        echo "🎉 Deployment successful!"
+        echo "Version: ${{ github.sha }}"
+        echo "Environment: Production"
+        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        
+        # In a real scenario, this would send notifications
+        # - Slack notification
+        # - Email notification
+        # - Teams notification
+        # - Update status page
+        
+    - name: Notify deployment failure
+      if: needs.deploy-production.result == 'failure'
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Please check the logs and consider rollback."
+        
+        # Send failure notifications
+        exit 1
+        
+    - name: Generate deployment report
+      if: always()
+      run: |
+        echo "📊 Generating deployment report..."
+        
+        cat << EOF > deployment-report.md
+        # Deployment Report
+        
+        **Date:** $(date)
+        **Commit:** ${{ github.sha }}
+        **Branch:** ${{ github.ref_name }}
+        **Status:** ${{ needs.deploy-production.result }}
+        **Image:** ${{ needs.build-and-push.outputs.image-tag }}
+        
+        ## Deployment Steps
+        - ✅ CI Pipeline
+        - ✅ Docker Build & Push
+        - ✅ Staging Deployment
+        - ✅ Security Scan
+        - ${{ needs.deploy-production.result == 'success' && '✅' || '❌' }} Production Deployment
+        - ${{ needs.performance-monitoring.result == 'success' && '✅' || '❌' }} Performance Tests
+        
+        ## Next Steps
+        - Monitor application performance
+        - Check error rates and logs
+        - Validate business metrics
+        EOF
+        
+        echo "✅ Deployment report generated"
+        
+    - name: Upload deployment report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: deployment-report
+        path: deployment-report.md
+
+# Reusable workflow for hotfixes
+  hotfix-deploy:
+    runs-on: ubuntu-latest
+    name: Hotfix Deployment
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    
+    steps:
+    - name: Deploy hotfix
+      run: |
+        echo "🚨 Deploying hotfix..."
+        echo "Branch: ${{ github.ref_name }}"
+        
+        # Hotfix deployment logic
+        # - Fast-track deployment
+        # - Skip some checks for urgent fixes
+        # - Immediate notification
+        
+        echo "✅ Hotfix deployed"

@@ -1,0 +1,50 @@
+stages:
+  load_data:
+    cmd: python src/data/load_data.py
+    deps:
+    - src/data/load_data.py
+    - configs/config.yaml
+    outs:
+    - data/raw/california_housing_raw.csv
+    - data/raw/dataset_info.txt
+    - data/processed/train.csv
+    - data/processed/validation.csv
+    - data/processed/test.csv
+    desc: "Load and split California Housing dataset"
+
+  train_models:
+    cmd: python src/models/train_model.py
+    deps:
+    - src/models/train_model.py
+    - data/processed/train.csv
+    - data/processed/validation.csv
+    - data/processed/test.csv
+    - configs/config.yaml
+    outs:
+    - mlruns
+    metrics:
+    - metrics.json
+    desc: "Train multiple ML models and track with MLflow"
+
+  evaluate_models:
+    cmd: python src/models/evaluate_model.py
+    deps:
+    - src/models/evaluate_model.py
+    - data/processed/test.csv
+    - mlruns
+    metrics:
+    - evaluation_metrics.json
+    plots:
+    - plots/confusion_matrix.png
+    - plots/feature_importance.png
+    - plots/residuals.png
+    desc: "Evaluate trained models and generate plots"
+
+  validate_api:
+    cmd: python -m pytest tests/test_api.py -v
+    deps:
+    - src/api/main.py
+    - src/api/models.py
+    - tests/test_api.py
+    - mlruns
+    desc: "Validate API functionality"

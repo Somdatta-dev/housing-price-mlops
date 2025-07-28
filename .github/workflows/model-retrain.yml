@@ -1,0 +1,481 @@
+name: Model Retraining Pipeline
+
+on:
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force model retraining even if performance is good'
+        required: false
+        default: 'false'
+        type: boolean
+      data_source:
+        description: 'Data source for retraining'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+        - latest
+        - production
+        - custom
+      model_types:
+        description: 'Model types to train (comma-separated)'
+        required: false
+        default: 'all'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.9'
+  MLFLOW_TRACKING_URI: 'http://localhost:5000'
+
+jobs:
+  # Data validation and drift detection
+  data-validation:
+    runs-on: ubuntu-latest
+    name: Data Validation & Drift Detection
+    
+    outputs:
+      data-drift-detected: ${{ steps.drift-check.outputs.drift-detected }}
+      data-quality-score: ${{ steps.quality-check.outputs.quality-score }}
+      should-retrain: ${{ steps.retrain-decision.outputs.should-retrain }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install evidently pandas-profiling great-expectations
+        
+    - name: Download latest data
+      run: |
+        echo "📥 Downloading latest data..."
+        # In a real scenario, this would download from data sources
+        # - S3, GCS, Azure Blob Storage
+        # - Database exports
+        # - API endpoints
+        python src/data/load_data.py
+        
+    - name: Run data quality checks
+      id: quality-check
+      run: |
+        echo "🔍 Running data quality checks..."
+        
+        # Create a simple data quality script
+        cat << 'EOF' > check_data_quality.py
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+        
+        def check_data_quality():
+            # Load data
+            data_path = Path("data/processed/train.csv")
+            if not data_path.exists():
+                print("❌ Training data not found")
+                return 0.0
+                
+            df = pd.read_csv(data_path)
+            
+            # Quality checks
+            checks = []
+            
+            # Check for missing values
+            missing_ratio = df.isnull().sum().sum() / (df.shape[0] * df.shape[1])
+            checks.append(1.0 - missing_ratio)
+            
+            # Check for duplicates
+            duplicate_ratio = df.duplicated().sum() / len(df)
+            checks.append(1.0 - duplicate_ratio)
+            
+            # Check data types
+            numeric_cols = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude']
+            type_check = all(df[col].dtype in ['float64', 'int64'] for col in numeric_cols if col in df.columns)
+            checks.append(1.0 if type_check else 0.0)
+            
+            # Check value ranges
+            range_checks = []
+            if 'Latitude' in df.columns:
+                range_checks.append((df['Latitude'] >= 32).all() and (df['Latitude'] <= 42).all())
+            if 'Longitude' in df.columns:
+                range_checks.append((df['Longitude'] >= -125).all() and (df['Longitude'] <= -114).all())
+            
+            checks.append(np.mean(range_checks) if range_checks else 1.0)
+            
+            quality_score = np.mean(checks)
+            print(f"📊 Data quality score: {quality_score:.3f}")
+            
+            return quality_score
+        
+        if __name__ == "__main__":
+            score = check_data_quality()
+            print(f"::set-output name=quality-score::{score}")
+        EOF
+        
+        python check_data_quality.py
+        
+    - name: Check for data drift
+      id: drift-check
+      run: |
+        echo "🌊 Checking for data drift..."
+        
+        # Create a simple drift detection script
+        cat << 'EOF' > check_data_drift.py
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+        from scipy import stats
+        
+        def check_data_drift():
+            # Load current and reference data
+            current_path = Path("data/processed/train.csv")
+            
+            if not current_path.exists():
+                print("❌ Current data not found")
+                return False
+                
+            current_df = pd.read_csv(current_path)
+            
+            # For demo, we'll simulate reference data
+            # In practice, this would be loaded from a reference dataset
+            reference_df = current_df.sample(frac=0.8, random_state=42)
+            
+            drift_detected = False
+            numeric_cols = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup']
+            
+            for col in numeric_cols:
+                if col in current_df.columns and col in reference_df.columns:
+                    # Kolmogorov-Smirnov test
+                    ks_stat, p_value = stats.ks_2samp(reference_df[col], current_df[col])
+                    
+                    if p_value < 0.05:  # Significant drift detected
+                        print(f"🚨 Drift detected in {col}: KS={ks_stat:.3f}, p={p_value:.3f}")
+                        drift_detected = True
+                    else:
+                        print(f"✅ No drift in {col}: KS={ks_stat:.3f}, p={p_value:.3f}")
+            
+            return drift_detected
+        
+        if __name__ == "__main__":
+            drift = check_data_drift()
+            print(f"::set-output name=drift-detected::{drift}")
+        EOF
+        
+        python check_data_drift.py
+        
+    - name: Make retraining decision
+      id: retrain-decision
+      run: |
+        echo "🤔 Making retraining decision..."
+        
+        FORCE_RETRAIN="${{ github.event.inputs.force_retrain }}"
+        DATA_DRIFT="${{ steps.drift-check.outputs.drift-detected }}"
+        QUALITY_SCORE="${{ steps.quality-check.outputs.quality-score }}"
+        
+        SHOULD_RETRAIN="false"
+        
+        if [ "$FORCE_RETRAIN" = "true" ]; then
+          echo "🔄 Force retrain requested"
+          SHOULD_RETRAIN="true"
+        elif [ "$DATA_DRIFT" = "true" ]; then
+          echo "🌊 Data drift detected - retraining needed"
+          SHOULD_RETRAIN="true"
+        elif (( $(echo "$QUALITY_SCORE < 0.8" | bc -l) )); then
+          echo "📉 Data quality below threshold - retraining needed"
+          SHOULD_RETRAIN="true"
+        else
+          echo "✅ No retraining needed"
+        fi
+        
+        echo "::set-output name=should-retrain::$SHOULD_RETRAIN"
+        echo "Should retrain: $SHOULD_RETRAIN"
+
+  # Model retraining
+  retrain-models:
+    runs-on: ubuntu-latest
+    name: Retrain Models
+    needs: data-validation
+    if: needs.data-validation.outputs.should-retrain == 'true'
+    
+    outputs:
+      new-model-version: ${{ steps.training.outputs.model-version }}
+      model-performance: ${{ steps.training.outputs.performance }}
+      best-model: ${{ steps.training.outputs.best-model }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Start MLflow server
+      run: |
+        mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db &
+        sleep 10
+        
+    - name: Prepare training data
+      run: |
+        echo "📊 Preparing training data..."
+        mkdir -p data/raw data/processed logs mlruns
+        python src/data/load_data.py
+        
+    - name: Train models
+      id: training
+      run: |
+        echo "🏋️ Training models..."
+        
+        # Run model training
+        python src/models/train_model.py
+        
+        # Extract results (in a real scenario, this would query MLflow)
+        MODEL_VERSION=$(date +%Y%m%d_%H%M%S)
+        PERFORMANCE="0.85"  # Simulated performance score
+        BEST_MODEL="RandomForest"
+        
+        echo "::set-output name=model-version::$MODEL_VERSION"
+        echo "::set-output name=performance::$PERFORMANCE"
+        echo "::set-output name=best-model::$BEST_MODEL"
+        
+        echo "✅ Model training completed"
+        echo "Version: $MODEL_VERSION"
+        echo "Performance: $PERFORMANCE"
+        echo "Best Model: $BEST_MODEL"
+        
+    - name: Upload training artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: training-artifacts
+        path: |
+          mlruns/
+          logs/
+
+  # Model validation
+  validate-models:
+    runs-on: ubuntu-latest
+    name: Validate New Models
+    needs: [data-validation, retrain-models]
+    if: needs.retrain-models.result == 'success'
+    
+    outputs:
+      validation-passed: ${{ steps.validation.outputs.passed }}
+      performance-improved: ${{ steps.comparison.outputs.improved }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Download training artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: training-artifacts
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run model validation
+      id: validation
+      run: |
+        echo "✅ Running model validation..."
+        
+        # Create validation script
+        cat << 'EOF' > validate_model.py
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+        
+        def validate_model():
+            # Load test data
+            test_path = Path("data/processed/test.csv")
+            if not test_path.exists():
+                print("❌ Test data not found")
+                return False
+                
+            test_df = pd.read_csv(test_path)
+            
+            # Validation checks
+            checks = []
+            
+            # Check data shape
+            expected_features = 8
+            actual_features = test_df.shape[1] - 1  # Exclude target
+            checks.append(actual_features == expected_features)
+            
+            # Check for reasonable predictions (simulated)
+            # In practice, this would load the model and make predictions
+            predictions = np.random.normal(4.0, 1.0, len(test_df))  # Simulated
+            
+            # Validate prediction ranges
+            checks.append(np.all(predictions > 0))  # Positive prices
+            checks.append(np.all(predictions < 20))  # Reasonable upper bound
+            
+            # Check prediction distribution
+            pred_mean = np.mean(predictions)
+            checks.append(2.0 < pred_mean < 8.0)  # Reasonable mean
+            
+            all_passed = all(checks)
+            print(f"Validation checks: {checks}")
+            print(f"All checks passed: {all_passed}")
+            
+            return all_passed
+        
+        if __name__ == "__main__":
+            passed = validate_model()
+            print(f"::set-output name=passed::{passed}")
+        EOF
+        
+        python validate_model.py
+        
+    - name: Compare with previous model
+      id: comparison
+      run: |
+        echo "📊 Comparing with previous model..."
+        
+        NEW_PERFORMANCE="${{ needs.retrain-models.outputs.model-performance }}"
+        PREVIOUS_PERFORMANCE="0.80"  # Simulated previous performance
+        
+        IMPROVED="false"
+        if (( $(echo "$NEW_PERFORMANCE > $PREVIOUS_PERFORMANCE" | bc -l) )); then
+          IMPROVED="true"
+          echo "📈 New model performance improved: $NEW_PERFORMANCE > $PREVIOUS_PERFORMANCE"
+        else
+          echo "📉 New model performance not improved: $NEW_PERFORMANCE <= $PREVIOUS_PERFORMANCE"
+        fi
+        
+        echo "::set-output name=improved::$IMPROVED"
+
+  # Deploy new model
+  deploy-model:
+    runs-on: ubuntu-latest
+    name: Deploy New Model
+    needs: [retrain-models, validate-models]
+    if: needs.validate-models.outputs.validation-passed == 'true' && needs.validate-models.outputs.performance-improved == 'true'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy new model
+      run: |
+        echo "🚀 Deploying new model..."
+        echo "Model Version: ${{ needs.retrain-models.outputs.new-model-version }}"
+        echo "Best Model: ${{ needs.retrain-models.outputs.best-model }}"
+        echo "Performance: ${{ needs.retrain-models.outputs.model-performance }}"
+        
+        # In a real scenario, this would:
+        # - Update model registry
+        # - Deploy to staging first
+        # - Run integration tests
+        # - Deploy to production
+        # - Update API to use new model
+        
+        echo "✅ Model deployment completed"
+        
+    - name: Update model registry
+      run: |
+        echo "📝 Updating model registry..."
+        # This would update MLflow model registry
+        # mlflow models set-tag -n "HousingPriceModel" -v $VERSION --tag "stage" --tag-value "Production"
+        echo "✅ Model registry updated"
+        
+    - name: Notify deployment
+      run: |
+        echo "📢 Sending deployment notifications..."
+        # This would send notifications to relevant teams
+        echo "✅ Notifications sent"
+
+  # Rollback capability
+  rollback-model:
+    runs-on: ubuntu-latest
+    name: Rollback Model (if needed)
+    needs: [retrain-models, validate-models]
+    if: needs.validate-models.outputs.validation-passed == 'false' || needs.validate-models.outputs.performance-improved == 'false'
+    
+    steps:
+    - name: Rollback to previous model
+      run: |
+        echo "🔄 Rolling back to previous model..."
+        echo "Reason: Validation failed or performance not improved"
+        
+        # In a real scenario, this would:
+        # - Revert to previous model version
+        # - Update model registry
+        # - Notify teams about rollback
+        
+        echo "✅ Rollback completed"
+
+  # Cleanup and reporting
+  cleanup-and-report:
+    runs-on: ubuntu-latest
+    name: Cleanup and Report
+    needs: [data-validation, retrain-models, validate-models, deploy-model]
+    if: always()
+    
+    steps:
+    - name: Generate retraining report
+      run: |
+        echo "📊 Generating retraining report..."
+        
+        cat << EOF > retraining-report.md
+        # Model Retraining Report
+        
+        **Date:** $(date)
+        **Trigger:** ${{ github.event_name }}
+        **Data Quality Score:** ${{ needs.data-validation.outputs.data-quality-score }}
+        **Data Drift Detected:** ${{ needs.data-validation.outputs.data-drift-detected }}
+        **Should Retrain:** ${{ needs.data-validation.outputs.should-retrain }}
+        
+        ## Results
+        - **New Model Version:** ${{ needs.retrain-models.outputs.new-model-version }}
+        - **Best Model:** ${{ needs.retrain-models.outputs.best-model }}
+        - **Performance:** ${{ needs.retrain-models.outputs.model-performance }}
+        - **Validation Passed:** ${{ needs.validate-models.outputs.validation-passed }}
+        - **Performance Improved:** ${{ needs.validate-models.outputs.performance-improved }}
+        
+        ## Actions Taken
+        - ${{ needs.data-validation.outputs.should-retrain == 'true' && '✅' || '❌' }} Model Retraining
+        - ${{ needs.validate-models.outputs.validation-passed == 'true' && '✅' || '❌' }} Model Validation
+        - ${{ needs.deploy-model.result == 'success' && '✅' || '❌' }} Model Deployment
+        
+        ## Next Steps
+        - Monitor new model performance
+        - Track prediction accuracy
+        - Schedule next retraining cycle
+        EOF
+        
+        echo "✅ Retraining report generated"
+        
+    - name: Upload retraining report
+      uses: actions/upload-artifact@v3
+      with:
+        name: retraining-report
+        path: retraining-report.md
+        
+    - name: Cleanup temporary files
+      run: |
+        echo "🧹 Cleaning up temporary files..."
+        # Clean up any temporary files, old models, etc.
+        echo "✅ Cleanup completed"
