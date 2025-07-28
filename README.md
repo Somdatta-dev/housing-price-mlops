@@ -54,7 +54,7 @@ This project demonstrates a production-ready machine learning pipeline for predi
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/housing-price-mlops.git
+   git clone https://github.com/Somdatta-dev/housing-price-mlops.git
    cd housing-price-mlops
    ```
 
