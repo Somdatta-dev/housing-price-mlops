@@ -6,7 +6,6 @@ scipy==1.11.1
 
 # MLflow for Experiment Tracking
 mlflow==2.5.0
-mlflow-skinny==2.5.0
 
 # API Framework
 fastapi==0.100.1
@@ -15,41 +14,28 @@ pydantic==2.1.1
 python-multipart==0.0.6
 
 # Data Validation and Processing
-pydantic==2.1.1
 marshmallow==3.20.1
-cerberus==1.3.5
 
 # Data Visualization
 matplotlib==3.7.2
 seaborn==0.12.2
 plotly==5.15.0
 
-# Jupyter and Notebooks
-jupyter==1.0.0
-jupyterlab==4.0.5
-ipykernel==6.25.0
-notebook==7.0.2
-
 # Data Version Control
 dvc==3.12.0
-dvc[gdrive]==3.12.0
 
 # Database
-sqlite3  # Built-in with Python
 sqlalchemy==2.0.19
-alembic==1.11.2
 
 # Configuration Management
 pyyaml==6.0.1
 python-dotenv==1.0.0
-configparser==5.3.0
 
 # Logging and Monitoring
 structlog==23.1.0
 prometheus-client==0.17.1
 psutil==5.9.5
 flask==2.3.2
-plotly==5.15.0
 
 # HTTP Requests
 requests==2.31.0
@@ -58,123 +44,18 @@ httpx==0.24.1
 # Testing
 pytest==7.4.0
 pytest-cov==4.1.0
-pytest-mock==3.11.1
 pytest-asyncio==0.21.1
-httpx==0.24.1  # For testing FastAPI
-
-# Code Quality and Formatting
-black==23.7.0
-flake8==6.0.0
-isort==5.12.0
-mypy==1.5.1
-pre-commit==3.3.3
-
-# Security
-bandit==1.7.5
-safety==2.3.5
-
-# Docker and Containerization
-docker==6.1.3
-
-# Environment and Utilities
-python-dateutil==2.8.2
-pytz==2023.3
-tqdm==4.65.0
-click==8.1.6
-
-# AWS SDK (if using AWS services)
-boto3==1.28.25
-botocore==1.31.25
-
-# Google Cloud SDK (if using GCP services)
-google-cloud-storage==2.10.0
-
-# Azure SDK (if using Azure services)
-azure-storage-blob==12.17.0
 
 # Serialization
 joblib==1.3.2
-pickle5==0.0.12
 
-# Web scraping (if needed for data collection)
-beautifulsoup4==4.12.2
-scrapy==2.10.0
-
-# Time series (if needed)
-statsmodels==0.14.0
-
-# Feature engineering
-feature-engine==1.6.2
-
-# Model interpretation
-shap==0.42.1
-lime==0.2.0.1
-
-# Hyperparameter optimization
-optuna==3.3.0
-hyperopt==0.2.7
-
-# Model serving
-bentoml==1.0.25
-
-# Workflow orchestration
-prefect==2.11.3
-
-# Data profiling
-pandas-profiling==3.6.6
-great-expectations==0.17.12
-
-# API documentation
-sphinx==7.1.2
-sphinx-rtd-theme==1.3.0
+# Environment and Utilities
+python-dateutil==2.8.2
+tqdm==4.65.0
+click==8.1.6
 
 # Development dependencies
-ipdb==0.13.13
 python-json-logger==2.0.7
-
-# Performance monitoring
-py-spy==0.3.14
-memory-profiler==0.61.0
-
-# Caching
-redis==4.6.0
-diskcache==5.6.3
-
-# Task queue
-celery==5.3.1
-
-# Load testing
-locust==2.16.1
-
-# Git hooks
-pre-commit==3.3.3
-
-# Environment management
-conda==23.7.2
-
-# Model validation
-evidently==0.4.2
-
-# Data drift detection
-alibi-detect==0.11.4
-
-# Model monitoring
-whylogs==1.3.4
-
-# Streamlit for dashboards (optional)
-streamlit==1.25.0
-
-# Gradio for model demos (optional)
-gradio==3.39.0
-
-# FastAPI extensions
-fastapi-users==12.1.1
-fastapi-limiter==0.1.5
-fastapi-cache2==0.2.1
-
-# Async support
-asyncio==3.4.3
-aiofiles==23.2.1
 
 # JSON handling
 orjson==3.9.4
@@ -182,33 +63,5 @@ orjson==3.9.4
 # Validation
 jsonschema==4.19.0
 
-# Cryptography
-cryptography==41.0.3
-
-# Networking
-aiohttp==3.8.5
-
-# File handling
-pathlib2==2.3.7
-
-# String processing
-fuzzywuzzy==0.18.0
-python-levenshtein==0.21.1
-
 # Progress bars
 rich==13.5.2
-
-# CLI tools
-typer==0.9.0
-
-# Model compression
-onnx==1.14.1
-onnxruntime==1.15.1
-
-# GPU support (optional)
-# torch==2.0.1
-# tensorflow==2.13.0
-
-# Distributed computing (optional)
-# dask==2023.7.1
-# ray==2.6.1

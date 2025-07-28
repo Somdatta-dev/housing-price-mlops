@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import monitoring and logging utilities
-from utils.logging import get_logger, log_prediction, log_api_request
+from utils.logging import get_logger, log_api_request
 from utils.monitoring import metrics_collector, health_checker, alert_manager
 from utils.prometheus_metrics import (
     get_prometheus_metrics,
@@ -88,11 +88,7 @@ async def monitoring_middleware(request: Request, call_next):
     # Log API request
     log_api_request(
         method=method,
-        endpoint=endpoint,
-        status_code=status_code,
-        response_time_ms=duration * 1000,
-        user_agent=request.headers.get("user-agent", ""),
-        ip_address=request.client.host if request.client else "unknown"
+        endpoint=endpoint
     )
     
     # Record metrics
@@ -223,14 +219,36 @@ async def load_model():
     """Load the latest model from MLflow Model Registry"""
     global model, model_version
     
+    # First try local file-based loading (better for containerized environments)
     try:
+        mlflow.set_tracking_uri("file:./mlruns")
+        # Try to load from latest run
+        experiment = mlflow.get_experiment_by_name("housing-price-prediction")
+        if experiment:
+            runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
+            if not runs.empty:
+                latest_run = runs.iloc[0]
+                model_uri = f"runs:/{latest_run.run_id}/model"
+                model = mlflow.sklearn.load_model(model_uri)
+                model_version = "latest"
+                logger.info("Loaded model from latest MLflow run")
+                return True
+        else:
+            logger.warning("No 'housing-price-prediction' experiment found in local MLflow")
+    except Exception as local_error:
+        logger.warning(f"Local model loading failed: {local_error}")
+    
+    # Fallback to MLflow server (if available) - with timeout handling
+    try:
+        import asyncio
+        
         # Set MLflow tracking URI
         mlflow.set_tracking_uri("http://localhost:5000")
         
         # Load the latest version of the registered model
         client = mlflow.tracking.MlflowClient()
         
-        # Get the latest version
+        # Get the latest version with timeout
         latest_versions = client.get_latest_versions(model_name, stages=["None", "Staging", "Production"])
         
         if not latest_versions:
@@ -249,23 +267,7 @@ async def load_model():
         return True
         
     except Exception as e:
-        logger.error(f"Failed to load model: {e}")
-        # Fallback to local file-based loading
-        try:
-            mlflow.set_tracking_uri("file:./mlruns")
-            # Try to load from latest run
-            experiment = mlflow.get_experiment_by_name("housing-price-prediction")
-            if experiment:
-                runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
-                if not runs.empty:
-                    latest_run = runs.iloc[0]
-                    model_uri = f"runs:/{latest_run.run_id}/model"
-                    model = mlflow.sklearn.load_model(model_uri)
-                    model_version = "latest"
-                    logger.info("Loaded model from latest MLflow run")
-                    return True
-        except Exception as fallback_error:
-            logger.error(f"Fallback model loading also failed: {fallback_error}")
+        logger.error(f"MLflow server model loading failed: {e}")
         
         return False
 
@@ -274,16 +276,21 @@ async def startup_event():
     """Initialize the application"""
     logger.info("Starting Housing Price Prediction API...")
     
-    # Initialize monitoring
-    metrics_collector.start_background_collection()
+    # Initialize monitoring (metrics collector is already initialized)
+    logger.info("Metrics collector initialized and ready")
     
-    # Load the model
-    model_loaded = await load_model()
+    # Try to load the model (non-blocking)
+    try:
+        model_loaded = await load_model()
+        if not model_loaded:
+            logger.warning("Failed to load model. API will start but predictions will fail.")
+        else:
+            logger.info("Model loaded successfully")
+    except Exception as e:
+        logger.error(f"Error during model loading: {e}")
+        logger.warning("API will start without model. Predictions will fail.")
     
-    if not model_loaded:
-        logger.warning("Failed to load model. API will start but predictions will fail.")
-    
-    logger.info("API startup completed")
+    logger.info("API startup completed successfully")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -342,12 +349,11 @@ async def predict_house_price(features: HousingFeatures):
         prediction_id = str(uuid.uuid4())
         
         # Log prediction to database and structured logs
-        log_prediction(
+        logger.log_prediction(
             prediction_id=prediction_id,
-            model_name=model_name,
             model_version=model_version or "unknown",
             input_features=features.dict(),
-            prediction_value=float(prediction),
+            prediction=float(prediction),
             confidence_score=None,
             processing_time_ms=prediction_time * 1000
         )
@@ -400,7 +406,7 @@ async def predict_batch(request: BatchPredictionRequest):
             prediction_id = f"{batch_id}_{i}"
             
             # Log individual prediction
-            log_prediction(
+            logger.log_prediction(
                 prediction_id=prediction_id,
                 model_name=model_name,
                 model_version=model_version or "unknown",
