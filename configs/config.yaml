@@ -1,0 +1,277 @@
+# Main configuration file for Housing Price Prediction MLOps Pipeline
+
+# Project Information
+project:
+  name: "housing-price-mlops"
+  version: "1.0.0"
+  description: "MLOps pipeline for housing price prediction"
+
+# Data Configuration
+data:
+  raw_data_path: "data/raw/"
+  processed_data_path: "data/processed/"
+  external_data_path: "data/external/"
+  interim_data_path: "data/interim/"
+  
+  # Dataset specific settings
+  dataset:
+    name: "california_housing"
+    target_column: "median_house_value"
+    test_size: 0.2
+    random_state: 42
+    validation_size: 0.2
+
+# Model Configuration
+model:
+  # Model registry settings
+  registry:
+    name: "housing-price-model"
+    stage: "Production"
+    
+  # Training parameters
+  training:
+    algorithms:
+      - "linear_regression"
+      - "random_forest"
+      - "decision_tree"
+    
+    # Cross-validation settings
+    cv_folds: 5
+    scoring_metric: "neg_mean_squared_error"
+    
+    # Hyperparameter tuning
+    hyperparameter_tuning:
+      enabled: true
+      method: "grid_search"  # Options: grid_search, random_search, bayesian
+      n_iter: 100  # For random search
+      cv: 3
+      
+    # Model-specific parameters
+    linear_regression:
+      alpha: [0.1, 1.0, 10.0, 100.0]
+      fit_intercept: [true, false]
+      
+    random_forest:
+      n_estimators: [50, 100, 200]
+      max_depth: [10, 20, 30, null]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+      
+    decision_tree:
+      max_depth: [5, 10, 15, 20, null]
+      min_samples_split: [2, 5, 10, 20]
+      min_samples_leaf: [1, 2, 5, 10]
+
+# MLflow Configuration
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "housing-price-prediction"
+  artifact_location: "./mlruns"
+  
+  # Model registry settings
+  model_registry:
+    registered_model_name: "HousingPriceModel"
+    
+  # Autologging settings
+  autolog:
+    sklearn: true
+    log_models: true
+    log_datasets: true
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  reload: false
+  
+  # API versioning
+  version: "v1"
+  title: "Housing Price Prediction API"
+  description: "REST API for housing price predictions using ML models"
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    
+  # CORS settings
+  cors:
+    allow_origins: ["*"]
+    allow_methods: ["GET", "POST"]
+    allow_headers: ["*"]
+
+# Database Configuration
+database:
+  # SQLite for logging predictions
+  sqlite:
+    path: "data/predictions.db"
+    
+  # Tables
+  tables:
+    predictions:
+      name: "predictions"
+      columns:
+        - "id"
+        - "timestamp"
+        - "model_version"
+        - "input_features"
+        - "prediction"
+        - "confidence"
+        - "response_time"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
+  file:
+    enabled: true
+    path: "logs/"
+    filename: "app.log"
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
+    
+  # Console logging
+  console:
+    enabled: true
+    
+  # Structured logging (JSON)
+  structured:
+    enabled: true
+    include_fields:
+      - "timestamp"
+      - "level"
+      - "message"
+      - "module"
+      - "function"
+      - "line"
+
+# Monitoring Configuration
+monitoring:
+  # Metrics collection
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    
+  # Health check
+  health_check:
+    endpoint: "/health"
+    
+  # Performance monitoring
+  performance:
+    track_response_time: true
+    track_memory_usage: true
+    track_cpu_usage: true
+    
+  # Alerting thresholds
+  alerts:
+    response_time_threshold: 1000  # milliseconds
+    error_rate_threshold: 0.05  # 5%
+    memory_usage_threshold: 0.8  # 80%
+
+# Docker Configuration
+docker:
+  base_image: "python:3.9-slim"
+  working_dir: "/app"
+  port: 8000
+  
+  # Multi-stage build settings
+  build:
+    stages:
+      - "builder"
+      - "production"
+
+# CI/CD Configuration
+cicd:
+  # GitHub Actions
+  github_actions:
+    python_versions: ["3.8", "3.9", "3.10"]
+    
+    # Testing
+    testing:
+      coverage_threshold: 80
+      
+    # Code quality
+    code_quality:
+      tools:
+        - "flake8"
+        - "black"
+        - "isort"
+        - "bandit"
+        - "safety"
+        
+    # Security scanning
+    security:
+      enabled: true
+      tools:
+        - "bandit"
+        - "safety"
+        - "docker-scout"
+
+# Feature Engineering
+feature_engineering:
+  # Scaling
+  scaling:
+    method: "standard"  # standard, minmax, robust
+    
+  # Feature selection
+  feature_selection:
+    enabled: true
+    method: "mutual_info"  # mutual_info, f_regression, rfe
+    k_best: 10
+    
+  # Polynomial features
+  polynomial_features:
+    enabled: false
+    degree: 2
+    
+  # Feature creation
+  new_features:
+    - "rooms_per_household"
+    - "bedrooms_per_room"
+    - "population_per_household"
+
+# Data Validation
+data_validation:
+  # Schema validation
+  schema:
+    enabled: true
+    strict: true
+    
+  # Data quality checks
+  quality_checks:
+    - "missing_values"
+    - "data_types"
+    - "value_ranges"
+    - "duplicates"
+    
+  # Drift detection
+  drift_detection:
+    enabled: true
+    method: "ks_test"  # ks_test, chi2_test, psi
+    threshold: 0.05
+
+# Environment-specific overrides
+environments:
+  development:
+    api:
+      debug: true
+      reload: true
+    logging:
+      level: "DEBUG"
+      
+  staging:
+    api:
+      debug: false
+    mlflow:
+      tracking_uri: "http://staging-mlflow:5000"
+      
+  production:
+    api:
+      debug: false
+    logging:
+      level: "WARNING"
+    mlflow:
+      tracking_uri: "http://prod-mlflow:5000"
