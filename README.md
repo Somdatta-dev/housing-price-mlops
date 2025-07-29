@@ -197,19 +197,72 @@ curl -X POST "http://localhost:8000/predict" \
 
 > **📋 For comprehensive Docker instructions, see [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md)**
 
-This section provides essential Docker commands. For detailed deployment instructions, troubleshooting, and Docker Hub publishing, refer to the complete deployment guide.
+This section provides essential Docker commands and deployment strategies. For detailed deployment instructions, troubleshooting, and advanced configurations, refer to the complete deployment guide.
+
+### Quick Start with Docker
+
+#### Option 1: Automated Docker Hub Deployment (Recommended)
+
+We provide an automated PowerShell script that handles the entire Docker Hub deployment process:
+
+```powershell
+# Build the image
+docker build -t housing-price-api:latest .
+
+# Run the automated deployment script
+.\push-to-dockerhub.ps1 yourusername
+
+# The script will:
+# ✅ Validate local image exists
+# ✅ Tag image for Docker Hub
+# ✅ Handle Docker Hub authentication
+# ✅ Push image to Docker Hub
+# ✅ Provide usage instructions
+```
+
+**Script Output Example:**
+```
+🐳 Starting Docker Hub push process...
+✅ Local image found: housing-price-api:latest
+🏷️  Successfully tagged as: yourusername/housing-price-api:latest
+🔐 Login Succeeded
+🚀 Pushing image to Docker Hub...
+🎉 Successfully pushed to Docker Hub!
+Your image is now available at: https://hub.docker.com/r/yourusername/housing-price-api
+```
+
+#### Option 2: Manual Docker Hub Deployment
+
+```bash
+# 1. Build the image
+docker build -t housing-price-api:latest .
+
+# 2. Login to Docker Hub
+docker login
+
+# 3. Tag for Docker Hub
+docker tag housing-price-api:latest yourusername/housing-price-api:latest
+docker tag housing-price-api:latest yourusername/housing-price-api:v1.0.0
+
+# 4. Push to Docker Hub
+docker push yourusername/housing-price-api:latest
+docker push yourusername/housing-price-api:v1.0.0
+```
 
 ### Building the Docker Image
 
 ```bash
-# Build the image with a specific tag
+# Basic build
 docker build -t housing-price-api:latest .
 
 # Build with version tag
 docker build -t housing-price-api:v1.0.0 .
 
-# Build with custom name
-docker build -t my-housing-api .
+# Build without cache (clean build)
+docker build --no-cache -t housing-price-api:latest .
+
+# Multi-platform build
+docker buildx build --platform linux/amd64,linux/arm64 -t housing-price-api:multi .
 ```
 
 ### Running the Container
@@ -219,13 +272,26 @@ docker build -t my-housing-api .
 # Run in detached mode with port mapping
 docker run -d -p 8000:8000 --name housing-api housing-price-api:latest
 
-# Run with custom name
-docker run -d -p 8000:8000 --name my-housing-service housing-price-api:latest
-
 # Run with environment variables
 docker run -d -p 8000:8000 \
   -e LOG_LEVEL=DEBUG \
   -e API_HOST=0.0.0.0 \
+  -e MLFLOW_TRACKING_URI=http://host.docker.internal:5000 \
+  --name housing-api \
+  housing-price-api:latest
+
+# Run with volume mounts for persistence
+docker run -d -p 8000:8000 \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/mlruns:/app/mlruns \
+  --name housing-api \
+  housing-price-api:latest
+
+# Run with resource limits
+docker run -d -p 8000:8000 \
+  --memory=2g \
+  --cpus=1.5 \
+  --restart=unless-stopped \
   --name housing-api \
   housing-price-api:latest
 ```
@@ -241,29 +307,37 @@ docker logs housing-api
 # Follow logs in real-time
 docker logs -f housing-api
 
-# Stop the container
+# Execute commands inside container
+docker exec -it housing-api /bin/bash
+
+# Monitor resource usage
+docker stats housing-api
+
+# Stop and remove container
 docker stop housing-api
-
-# Start stopped container
-docker start housing-api
-
-# Remove container
 docker rm housing-api
 
-# Remove container forcefully
+# Force remove running container
 docker rm -f housing-api
 ```
 
 ### Testing the Dockerized API
 
+#### Health Checks
 ```bash
-# Health check
+# Basic health check
 curl http://localhost:8000/health
 
-# API info
-curl http://localhost:8000/
+# Detailed health check
+curl http://localhost:8000/health/detailed | jq '.'
 
-# Test prediction (replace with proper JSON escaping for your shell)
+# API information
+curl http://localhost:8000/ | jq '.'
+```
+
+#### API Testing
+```bash
+# Test single prediction
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
@@ -275,63 +349,208 @@ curl -X POST http://localhost:8000/predict \
     "AveOccup": 2.555556,
     "Latitude": 37.88,
     "Longitude": -122.23
-  }'
+  }' | jq '.'
+
+# Test batch prediction
+curl -X POST http://localhost:8000/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instances": [
+      {
+        "MedInc": 8.3252,
+        "HouseAge": 41.0,
+        "AveRooms": 6.984127,
+        "AveBedrms": 1.023810,
+        "Population": 322.0,
+        "AveOccup": 2.555556,
+        "Latitude": 37.88,
+        "Longitude": -122.23
+      }
+    ]
+  }' | jq '.'
+
+# Test Prometheus metrics
+curl http://localhost:8000/metrics
 ```
 
-### Docker Hub Deployment
+### Docker Hub Deployment Strategies
 
-#### Prerequisites
-- Docker Hub account (create at https://hub.docker.com)
-- Docker CLI logged in to Docker Hub
+#### Using Published Images
 
-#### Step-by-Step Deployment
-
-1. **Login to Docker Hub**
-   ```bash
-   docker login
-   # Enter your Docker Hub username and password
-   ```
-
-2. **Tag your image for Docker Hub**
-   ```bash
-   # Replace 'yourusername' with your actual Docker Hub username
-   docker tag housing-price-api:latest yourusername/housing-price-api:latest
-   docker tag housing-price-api:latest yourusername/housing-price-api:v1.0.0
-   
-   # Optional: Add additional tags
-   docker tag housing-price-api:latest yourusername/housing-price-api:stable
-   ```
-
-3. **Push to Docker Hub**
-   ```bash
-   # Push latest version
-   docker push yourusername/housing-price-api:latest
-   
-   # Push specific version
-   docker push yourusername/housing-price-api:v1.0.0
-   
-   # Push all tags
-   docker push yourusername/housing-price-api --all-tags
-   ```
-
-4. **Verify the upload**
-   - Visit https://hub.docker.com/r/yourusername/housing-price-api
-   - Check that your image appears with the correct tags
-
-#### Using the Docker Hub Image
+Once your image is on Docker Hub, anyone can use it:
 
 ```bash
-# Pull the image from Docker Hub
+# Pull and run from Docker Hub
 docker pull yourusername/housing-price-api:latest
-
-# Run the pulled image
 docker run -d -p 8000:8000 --name housing-api yourusername/housing-price-api:latest
 
-# Or run directly without explicit pull (Docker will pull automatically)
+# Or run directly (Docker will pull automatically)
 docker run -d -p 8000:8000 --name housing-api yourusername/housing-price-api:latest
+
+# Use specific version
+docker run -d -p 8000:8000 --name housing-api yourusername/housing-price-api:v1.0.0
 ```
 
-#### Automated Docker Hub Deployment with GitHub Actions
+#### Semantic Versioning
+
+```bash
+# Tag with semantic versions
+VERSION="1.2.3"
+docker tag housing-price-api:latest yourusername/housing-price-api:$VERSION
+docker tag housing-price-api:latest yourusername/housing-price-api:1.2
+docker tag housing-price-api:latest yourusername/housing-price-api:1
+docker tag housing-price-api:latest yourusername/housing-price-api:latest
+
+# Push all versions
+docker push yourusername/housing-price-api:$VERSION
+docker push yourusername/housing-price-api:1.2
+docker push yourusername/housing-price-api:1
+docker push yourusername/housing-price-api:latest
+```
+
+### Production Docker Compose
+
+Create `docker-compose.prod.yml` for production deployment:
+
+```yaml
+version: '3.8'
+
+services:
+  housing-api:
+    image: yourusername/housing-price-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=INFO
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - housing_logs:/app/logs
+      - housing_mlruns:/app/mlruns
+    depends_on:
+      - mlflow
+      - prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mlflow:
+    image: python:3.9-slim
+    ports:
+      - "5000:5000"
+    volumes:
+      - housing_mlruns:/app/mlruns
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install mlflow==2.5.0 &&
+        mlflow server 
+        --host 0.0.0.0 
+        --port 5000 
+        --backend-store-uri file:///app/mlruns
+      "
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - housing-api
+    restart: unless-stopped
+
+volumes:
+  housing_logs:
+  housing_mlruns:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: housing-prod-network
+```
+
+Deploy with:
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Cloud Platform Deployment
+
+#### AWS ECS (Elastic Container Service)
+```bash
+# Deploy to AWS ECS using your Docker Hub image
+aws ecs register-task-definition \
+  --family housing-price-api \
+  --network-mode awsvpc \
+  --requires-compatibilities FARGATE \
+  --cpu 1024 \
+  --memory 2048 \
+  --container-definitions '[
+    {
+      "name": "housing-api",
+      "image": "yourusername/housing-price-api:latest",
+      "portMappings": [{"containerPort": 8000, "protocol": "tcp"}],
+      "essential": true
+    }
+  ]'
+```
+
+#### Google Cloud Run
+```bash
+# Deploy to Google Cloud Run
+gcloud run deploy housing-price-api \
+  --image yourusername/housing-price-api:latest \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8000 \
+  --memory 2Gi \
+  --cpu 1
+```
+
+#### Azure Container Instances
+```bash
+# Deploy to Azure Container Instances
+az container create \
+  --resource-group myResourceGroup \
+  --name housing-price-api \
+  --image yourusername/housing-price-api:latest \
+  --dns-name-label housing-api-unique \
+  --ports 8000 \
+  --memory 2 \
+  --cpu 1
+```
+
+### Automated CI/CD with GitHub Actions
 
 Create `.github/workflows/docker-publish.yml`:
 
@@ -392,78 +611,83 @@ jobs:
    - `DOCKER_USERNAME`: Your Docker Hub username
    - `DOCKER_PASSWORD`: Your Docker Hub password or access token
 
-### Docker Compose for Production
-
-Create `docker-compose.prod.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  housing-api:
-    image: yourusername/housing-price-api:latest
-    ports:
-      - "8000:8000"
-    environment:
-      - LOG_LEVEL=INFO
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./ssl:/etc/nginx/ssl
-    depends_on:
-      - housing-api
-    restart: unless-stopped
-```
-
-Run with:
-```bash
-docker-compose -f docker-compose.prod.yml up -d
-```
-
 ### Docker Best Practices
 
 #### Security
 ```bash
-# Run with non-root user (already implemented in Dockerfile)
 # Scan for vulnerabilities
-docker scout cves housing-price-api:latest
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+  aquasec/trivy image housing-price-api:latest
 
 # Use specific base image versions
-# FROM python:3.9-slim-bullseye (instead of just python:3.9-slim)
+# FROM python:3.9.18-slim-bullseye (instead of python:3.9-slim)
+
+# Run with non-root user (already implemented in our Dockerfile)
 ```
 
-#### Performance
-```bash
-# Multi-stage builds (for smaller images)
-# Use .dockerignore to exclude unnecessary files
-# Optimize layer caching by ordering commands properly
+#### Performance Optimization
+```dockerfile
+# Multi-stage builds for smaller images
+FROM python:3.9-slim as builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+FROM python:3.9-slim
+WORKDIR /app
+COPY --from=builder /root/.local /root/.local
+COPY . .
+ENV PATH=/root/.local/bin:$PATH
 ```
 
-#### Monitoring
+#### Monitoring and Debugging
 ```bash
-# Check container resource usage
+# Monitor container resources
 docker stats housing-api
 
-# Inspect container details
+# Inspect container configuration
 docker inspect housing-api
 
-# Execute commands inside running container
+# Debug inside running container
 docker exec -it housing-api /bin/bash
+
+# Copy files from container for debugging
+docker cp housing-api:/app/logs/app.log ./debug-logs/
 ```
+
+### Troubleshooting Common Issues
+
+#### Container Won't Start
+```bash
+# Check container logs
+docker logs housing-api
+
+# Run interactively for debugging
+docker run -it housing-price-api:latest /bin/bash
+
+# Check if port is already in use
+lsof -i :8000
+```
+
+#### Docker Hub Push Fails
+```bash
+# Re-authenticate
+docker logout
+docker login
+
+# Verify image name matches Docker Hub username
+docker tag housing-price-api:latest yourusername/housing-price-api:latest
+```
+
+#### Out of Disk Space
+```bash
+# Clean up Docker resources
+docker system prune -f
+docker image prune -f
+docker volume prune -f
+```
+
+For comprehensive troubleshooting, deployment strategies, and advanced configurations, see the complete [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md).
 
 ## 📊 Complete API Reference
 
@@ -1093,7 +1317,8 @@ python scripts/show_architecture.py
 
 - **🚀 Quick Start**: Get running in 5 minutes
 - **🏗️ Architecture**: System design and components
-- **🐳 Deployment**: Production deployment strategies
+- **🐳 Docker Deployment**: [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md) - Comprehensive Docker usage
+- **⚡ Docker Quick Reference**: [DOCKER_QUICK_REFERENCE.md](DOCKER_QUICK_REFERENCE.md) - Essential Docker commands
 - **📊 Monitoring**: Setting up observability
 - **🔧 Development**: Local development setup
 - **🧪 Testing**: Comprehensive testing guide
@@ -1132,24 +1357,6 @@ docker-compose -f monitoring/docker-compose.monitoring.yml ps
 python scripts/health_check.py
 ```
 
-### 📞 Support & Contact
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/housing-price-mlops/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/housing-price-mlops/discussions)
-- **Documentation**: [Project Wiki](https://github.com/yourusername/housing-price-mlops/wiki)
-- **Email**: your-email@example.com
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -1159,9 +1366,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Docker for containerization
 - GitHub Actions for CI/CD
 
-## 📞 Support
 
-For questions and support, please open an issue in the GitHub repository or contact [your-email@example.com].
 
 ---
 
