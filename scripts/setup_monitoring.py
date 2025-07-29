@@ -4,11 +4,13 @@ Setup script for Housing Price Prediction MLOps Monitoring Stack
 """
 
 import os
-import sys
 import subprocess
+import sys
 import time
-import requests
 from pathlib import Path
+
+import requests
+
 
 def run_command(command, description):
     """Run a shell command and handle errors"""

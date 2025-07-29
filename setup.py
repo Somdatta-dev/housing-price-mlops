@@ -2,8 +2,9 @@
 Setup configuration for Housing Price Prediction MLOps Pipeline
 """
 
-from setuptools import setup, find_packages
 import os
+
+from setuptools import find_packages, setup
 
 # Read the contents of README file
 this_directory = os.path.abspath(os.path.dirname(__file__))

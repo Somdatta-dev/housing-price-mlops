@@ -6,11 +6,13 @@ import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Any
-from flask import Flask, render_template_string, jsonify, request
+from typing import Any, Dict, List
+
 import plotly.graph_objs as go
 import plotly.utils
-from .monitoring import metrics_collector, health_checker, alert_manager
+from flask import Flask, jsonify, render_template_string, request
+
+from .monitoring import alert_manager, health_checker, metrics_collector
 
 app = Flask(__name__)
 
@@ -294,153 +296,169 @@ DASHBOARD_HTML = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def dashboard():
     """Main dashboard page"""
     return render_template_string(DASHBOARD_HTML)
 
-@app.route('/api/metrics/summary')
+
+@app.route("/api/metrics/summary")
 def metrics_summary():
     """Get metrics summary"""
     summary = metrics_collector.get_metrics_summary(24)
     return jsonify(summary)
 
-@app.route('/api/health/detailed')
+
+@app.route("/api/health/detailed")
 def health_detailed():
     """Get detailed health status"""
     health_status = health_checker.run_health_checks()
     return jsonify(health_status)
 
-@app.route('/api/alerts')
+
+@app.route("/api/alerts")
 def active_alerts():
     """Get active alerts"""
     alerts = list(alert_manager.active_alerts.values())
     return jsonify(alerts)
 
-@app.route('/api/metrics/response-time-history')
+
+@app.route("/api/metrics/response-time-history")
 def response_time_history():
     """Get response time history"""
-    hours = int(request.args.get('hours', 24))
+    hours = int(request.args.get("hours", 24))
     cutoff_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + "Z"
-    
+
     try:
         with sqlite3.connect(metrics_collector.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT timestamp, response_time_ms 
                 FROM api_metrics 
                 WHERE timestamp > ? 
                 ORDER BY timestamp
-            """, (cutoff_time,))
-            
+            """,
+                (cutoff_time,),
+            )
+
             data = cursor.fetchall()
             timestamps = [row[0] for row in data]
             values = [row[1] for row in data]
-            
-            return jsonify({
-                'timestamps': timestamps,
-                'values': values
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/metrics/system-history')
+            return jsonify({"timestamps": timestamps, "values": values})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/system-history")
 def system_history():
     """Get system metrics history"""
-    hours = int(request.args.get('hours', 24))
+    hours = int(request.args.get("hours", 24))
     cutoff_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + "Z"
-    
+
     try:
         with sqlite3.connect(metrics_collector.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT timestamp, cpu_percent, memory_percent 
                 FROM system_metrics 
                 WHERE timestamp > ? 
                 ORDER BY timestamp
-            """, (cutoff_time,))
-            
+            """,
+                (cutoff_time,),
+            )
+
             data = cursor.fetchall()
             timestamps = [row[0] for row in data]
             cpu = [row[1] for row in data]
             memory = [row[2] for row in data]
-            
-            return jsonify({
-                'timestamps': timestamps,
-                'cpu': cpu,
-                'memory': memory
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/metrics/predictions-history')
+            return jsonify({"timestamps": timestamps, "cpu": cpu, "memory": memory})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/predictions-history")
 def predictions_history():
     """Get predictions history"""
-    hours = int(request.args.get('hours', 24))
+    hours = int(request.args.get("hours", 24))
     cutoff_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + "Z"
-    
+
     try:
         with sqlite3.connect(metrics_collector.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT timestamp, prediction_value 
                 FROM model_metrics 
                 WHERE timestamp > ? 
                 ORDER BY timestamp
-            """, (cutoff_time,))
-            
+            """,
+                (cutoff_time,),
+            )
+
             data = cursor.fetchall()
             timestamps = [row[0] for row in data]
             values = [row[1] for row in data]
-            
-            return jsonify({
-                'timestamps': timestamps,
-                'values': values
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/metrics/export')
+            return jsonify({"timestamps": timestamps, "values": values})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/export")
 def export_metrics():
     """Export metrics as JSON"""
-    hours = int(request.args.get('hours', 24))
+    hours = int(request.args.get("hours", 24))
     cutoff_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + "Z"
-    
+
     try:
         with sqlite3.connect(metrics_collector.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Get all metrics
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT timestamp, name, value, tags, type 
                 FROM metrics 
                 WHERE timestamp > ? 
                 ORDER BY timestamp
-            """, (cutoff_time,))
-            
+            """,
+                (cutoff_time,),
+            )
+
             metrics_data = []
             for row in cursor.fetchall():
-                metrics_data.append({
-                    'timestamp': row[0],
-                    'name': row[1],
-                    'value': row[2],
-                    'tags': json.loads(row[3]) if row[3] else None,
-                    'type': row[4]
-                })
-            
-            return jsonify({
-                'export_time': datetime.utcnow().isoformat() + "Z",
-                'time_period_hours': hours,
-                'metrics_count': len(metrics_data),
-                'metrics': metrics_data
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+                metrics_data.append(
+                    {
+                        "timestamp": row[0],
+                        "name": row[1],
+                        "value": row[2],
+                        "tags": json.loads(row[3]) if row[3] else None,
+                        "type": row[4],
+                    }
+                )
 
-def run_dashboard(host='0.0.0.0', port=3000, debug=False):
+            return jsonify(
+                {
+                    "export_time": datetime.utcnow().isoformat() + "Z",
+                    "time_period_hours": hours,
+                    "metrics_count": len(metrics_data),
+                    "metrics": metrics_data,
+                }
+            )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def run_dashboard(host="0.0.0.0", port=3000, debug=False):
     """Run the dashboard server"""
     print(f"Starting monitoring dashboard on http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_dashboard(debug=True)

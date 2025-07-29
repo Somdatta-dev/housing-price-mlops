@@ -4,11 +4,11 @@ Validation script to check if the CI/CD setup is ready.
 Run this before pushing to GitHub to ensure everything works.
 """
 
-import os
-import sys
-import subprocess
-from pathlib import Path
 import importlib.util
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 
 def check_file_exists(file_path, description):
