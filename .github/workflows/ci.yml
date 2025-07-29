@@ -9,6 +9,11 @@ on:
 env:
   PYTHON_VERSION: '3.9'
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   # Code Quality and Linting
   code-quality:
@@ -237,6 +242,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Docker Build and Test
     needs: [code-quality, test]
+    permissions:
+      contents: read
+      security-events: write
     
     steps:
     - name: Checkout code
@@ -280,6 +288,7 @@ jobs:
       if: always() && hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
 
   # Integration Tests
   integration:
