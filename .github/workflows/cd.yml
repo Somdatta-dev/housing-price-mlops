@@ -97,7 +97,7 @@ jobs:
         output-file: sbom.spdx.json
         
     - name: Upload SBOM
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sbom
         path: sbom.spdx.json
@@ -343,7 +343,7 @@ jobs:
         echo "✅ Deployment report generated"
         
     - name: Upload deployment report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: deployment-report
