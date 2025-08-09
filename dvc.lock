@@ -1,0 +1,34 @@
+schema: '2.0'
+stages:
+  load_data:
+    cmd: python src/data/load_data.py
+    deps:
+    - path: configs/config.yaml
+      hash: md5
+      md5: fde44bbf867e3941406532ed9b9a7bdf
+      size: 5898
+    - path: src/data/load_data.py
+      hash: md5
+      md5: 501e13821920d9cc89df3893ead34c26
+      size: 7088
+    outs:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 6dc79d33c57dd2ff877a73f6f63d79bf
+      size: 382715
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 6f4b9906fe619fceb4d44ebbb0bc8095
+      size: 1226517
+    - path: data/processed/validation.csv
+      hash: md5
+      md5: d5faa8a690515f5b6699b7a5efb6e0fb
+      size: 306758
+    - path: data/raw/california_housing_raw.csv
+      hash: md5
+      md5: 16bb10fd2372335ca83287503e8a1c3e
+      size: 1915802
+    - path: data/raw/dataset_info.txt
+      hash: md5
+      md5: a9df6c9b026e945677941667e82b697e
+      size: 771
