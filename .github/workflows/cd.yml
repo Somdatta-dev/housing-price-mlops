@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     tags: [ 'v*' ]
   workflow_run:
-    workflows: ["Continuous Integration"]
+    workflows: ["Continuous Integration (Detailed)"]
     types:
       - completed
     branches: [ main ]
@@ -35,13 +35,29 @@ jobs:
       uses: actions/github-script@v6
       with:
         script: |
-          if (context.eventName === 'push' || context.eventName === 'workflow_run') {
-            if (context.eventName === 'workflow_run' && context.payload.workflow_run.conclusion !== 'success') {
+          console.log('Event name:', context.eventName);
+          console.log('Ref:', context.ref);
+          
+          if (context.eventName === 'push') {
+            console.log('Direct push event - proceeding with deployment');
+            return 'true';
+          }
+          
+          if (context.eventName === 'workflow_run') {
+            console.log('Workflow run event');
+            console.log('Workflow conclusion:', context.payload.workflow_run.conclusion);
+            
+            if (context.payload.workflow_run.conclusion === 'success') {
+              console.log('CI workflow passed - proceeding with deployment');
+              return 'true';
+            } else {
+              console.log('CI workflow failed - skipping deployment');
               core.setFailed('CI workflow failed');
               return 'false';
             }
-            return 'true';
           }
+          
+          console.log('Unknown event type - skipping deployment');
           return 'false';
 
   # Build and push Docker image
