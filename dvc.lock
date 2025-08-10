@@ -58,11 +58,11 @@ stages:
     outs:
     - path: metrics.json
       hash: md5
-      md5: 7e6938d272d2c2c53d6ac8691401eef6
+      md5: cb1737efe827bac92a37492669357d79
       size: 1082
     - path: mlruns
       hash: md5
-      md5: 40ddd54762cba45053aa660d296b1d72.dir
+      md5: 4afa42ecb4965742fc8591361c63db1b.dir
       size: 195465305
       nfiles: 27
   evaluate_models:
@@ -74,7 +74,7 @@ stages:
       size: 382715
     - path: mlruns
       hash: md5
-      md5: ce014606338b69ab4aad9c9de729e0f6.dir
+      md5: e4db3dde3896b4eb5193c4b54f9a024f.dir
       size: 195465354
       nfiles: 28
     - path: src/models/evaluate_model.py
@@ -84,8 +84,8 @@ stages:
     outs:
     - path: evaluation_metrics.json
       hash: md5
-      md5: 2cb7f6844ba517dde3517a6daa885703
-      size: 1300
+      md5: 8928e4f52640b2ec56be7e65f5428518
+      size: 1299
     - path: plots/confusion_matrix.png
       hash: md5
       md5: ff3f54b5f9689cbf305449a1289fe87e
