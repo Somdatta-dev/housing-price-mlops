@@ -29,7 +29,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from utils.dashboard import run_dashboard
 
 # Import monitoring and logging utilities
-from utils.logging import get_logger, log_api_request
+from utils.logging import get_logger, log_api_request, db_logger
 from utils.monitoring import alert_manager, health_checker, metrics_collector
 from utils.prometheus_metrics import (
     get_prometheus_content_type,
@@ -222,7 +222,31 @@ async def load_model():
     """Load the latest model from MLflow Model Registry"""
     global model, model_version
 
-    # First try local file-based loading (better for containerized environments)
+    # Direct model loading from available artifacts (works even without MLflow server)
+    try:
+        from pathlib import Path
+        
+        # Find available model artifacts
+        models_dir = Path("./mlruns/1/models/")
+        if models_dir.exists():
+            model_paths = list(models_dir.glob("m-*"))
+            if model_paths:
+                # Load the first available model (you could implement logic to choose the best one)
+                model_path = model_paths[0]
+                model_artifact_path = model_path / "artifacts"
+                
+                model = mlflow.sklearn.load_model(str(model_artifact_path))
+                model_version = model_path.name
+                
+                logger.info(f"Successfully loaded model from {model_artifact_path}")
+                logger.info(f"Model type: {type(model).__name__}")
+                return True
+        
+        logger.warning("No model artifacts found in ./mlruns/1/models/")
+    except Exception as direct_error:
+        logger.warning(f"Direct model loading failed: {direct_error}")
+
+    # Fallback: Try local file-based loading from experiment
     try:
         mlflow.set_tracking_uri("file:./mlruns")
         # Try to load from latest run
@@ -243,7 +267,7 @@ async def load_model():
     except Exception as local_error:
         logger.warning(f"Local model loading failed: {local_error}")
 
-    # Fallback to MLflow server (if available) - with timeout handling
+    # Final fallback to MLflow server (if available)
     try:
         import asyncio
 
@@ -253,7 +277,7 @@ async def load_model():
         # Load the latest version of the registered model
         client = mlflow.tracking.MlflowClient()
 
-        # Get the latest version with timeout
+        # Get the latest versions with timeout
         latest_versions = client.get_latest_versions(
             model_name, stages=["None", "Staging", "Production"]
         )
@@ -363,20 +387,20 @@ async def predict_house_price(features: HousingFeatures):
         prediction_id = str(uuid.uuid4())
 
         # Log prediction to database and structured logs
-        logger.log_prediction(
+        db_logger.log_prediction(
             prediction_id=prediction_id,
             model_version=model_version or "unknown",
             input_features=features.dict(),
             prediction=float(prediction),
-            confidence_score=None,
             processing_time_ms=prediction_time * 1000,
         )
 
         # Record metrics
         metrics_collector.record_model_prediction(
             model_name=model_name,
+            model_version=model_version or "unknown",
+            prediction_time_ms=prediction_time * 1000,
             prediction_value=float(prediction),
-            inference_time=prediction_time,
         )
         record_prediction_metrics(model_name, float(prediction), prediction_time)
 
@@ -425,13 +449,11 @@ async def predict_batch(request: BatchPredictionRequest):
             prediction_id = f"{batch_id}_{i}"
 
             # Log individual prediction
-            logger.log_prediction(
+            db_logger.log_prediction(
                 prediction_id=prediction_id,
-                model_name=model_name,
                 model_version=model_version or "unknown",
                 input_features=instance.dict(),
-                prediction_value=float(prediction),
-                confidence_score=None,
+                prediction=float(prediction),
                 processing_time_ms=0,  # Individual time not tracked in batch
             )
 
@@ -451,11 +473,13 @@ async def predict_batch(request: BatchPredictionRequest):
         processing_time = time.time() - start_time
 
         # Record batch metrics
-        metrics_collector.record_batch_prediction(
-            model_name=model_name,
-            batch_size=len(predictions),
-            total_processing_time=processing_time,
-        )
+        for prediction_resp in predictions:
+            metrics_collector.record_model_prediction(
+                model_name=model_name,
+                model_version=model_version or "unknown",
+                prediction_time_ms=0,  # Individual time not tracked in batch
+                prediction_value=prediction_resp.prediction,
+            )
 
         logger.info(
             f"Batch prediction {batch_id}: {len(predictions)} instances processed in {processing_time:.4f}s"

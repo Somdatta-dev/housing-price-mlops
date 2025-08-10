@@ -271,7 +271,7 @@ class TestModelReloadEndpoint:
     """Test the model reload endpoint"""
 
     @patch("api.main.load_model")
-    async def test_model_reload_success(self, mock_load_model):
+    def test_model_reload_success(self, mock_load_model):
         """Test successful model reload"""
         mock_load_model.return_value = True
 
@@ -286,7 +286,7 @@ class TestModelReloadEndpoint:
             assert "reloaded successfully" in data["message"]
 
     @patch("api.main.load_model")
-    async def test_model_reload_failure(self, mock_load_model):
+    def test_model_reload_failure(self, mock_load_model):
         """Test failed model reload"""
         mock_load_model.return_value = False
 
