@@ -1205,111 +1205,6 @@ locust -f tests/performance/locustfile.py --host=http://localhost:8000
 python tests/performance/load_test.py --users=1000 --duration=300
 ```
 
-## 🎥 Demo & Walkthrough Guide
-
-### 📹 5-Minute Demo Script
-
-#### **Minute 1: System Setup & Health**
-```bash
-# Start complete system
-python scripts/setup_monitoring.py
-
-# Verify all services are healthy
-curl -s http://localhost:8000/health/detailed | jq '.'
-
-# Show service URLs
-echo "🏠 API: http://localhost:8000/docs"
-echo "📊 MLflow: http://localhost:5000"
-echo "📈 Dashboard: http://localhost:3000"
-echo "📊 Grafana: http://localhost:3001"
-```
-
-#### **Minute 2: Model Training & Experiment Tracking**
-```bash
-# Show MLflow experiments
-open http://localhost:5000
-
-# Display model comparison
-python scripts/show_model_comparison.py
-
-# Show best model metrics
-curl -s http://localhost:8000/model/info | jq '.training_metrics'
-```
-
-#### **Minute 3: API Predictions & Validation**
-```bash
-# Single prediction with validation
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "MedInc": 8.3252,
-    "HouseAge": 41.0,
-    "AveRooms": 6.984127,
-    "AveBedrms": 1.023810,
-    "Population": 322.0,
-    "AveOccup": 2.555556,
-    "Latitude": 37.88,
-    "Longitude": -122.23
-  }' | jq '.'
-
-# Batch prediction
-curl -X POST http://localhost:8000/predict/batch \
-  -H "Content-Type: application/json" \
-  -d @examples/batch_request.json | jq '.total_instances'
-
-# Show validation error
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{"MedInc": 25.0}' | jq '.error'
-```
-
-#### **Minute 4: Real-time Monitoring & Dashboards**
-```bash
-# Show real-time metrics dashboard
-open http://localhost:3000
-
-# Display Prometheus metrics
-curl -s http://localhost:8000/metrics | grep housing_api_requests_total
-
-# Show Grafana professional dashboard
-open http://localhost:3001  # admin/admin
-
-# Display active alerts
-curl -s http://localhost:8000/monitoring/alerts | jq '.count'
-```
-
-#### **Minute 5: CI/CD & Automation**
-```bash
-# Show GitHub Actions workflows
-open https://github.com/yourusername/housing-price-mlops/actions
-
-# Trigger model retraining
-gh workflow run model-retrain.yml
-
-# Show Docker containers
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-# Display system architecture
-python scripts/show_architecture.py
-```
-
-### 🎬 Video Recording Guidelines
-
-**Technical Setup:**
-- **Resolution**: 1920x1080 (Full HD)
-- **Frame Rate**: 30fps minimum
-- **Audio**: Clear narration, no background noise
-- **Duration**: Exactly 5 minutes
-- **Format**: MP4, H.264 codec
-- **File Size**: <100MB
-
-**Content Requirements:**
-- ✅ Show all major components working
-- ✅ Demonstrate real-time predictions
-- ✅ Display monitoring dashboards
-- ✅ Show CI/CD pipeline
-- ✅ Highlight bonus features
-- ✅ Professional presentation
 
 ## 📚 Documentation & Resources
 
@@ -1371,5 +1266,5 @@ python scripts/health_check.py
 ---
 
 **Project Status**: 🚧 In Development  
-**Last Updated**: July 28, 2025  
+**Last Updated**: August 10, 2025  
 **Version**: 1.0.0
