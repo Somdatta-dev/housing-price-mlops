@@ -93,7 +93,9 @@ def start_mlflow_server():
                     "--port",
                     "5000",
                     "--backend-store-uri",
-                    "sqlite:///mlflow.db",
+                    "sqlite:///mlruns.db",
+                    "--default-artifact-root",
+                    "./mlruns",
                 ],
                 check=True,
             )
