@@ -32,3 +32,69 @@ stages:
       hash: md5
       md5: a9df6c9b026e945677941667e82b697e
       size: 771
+  train_models:
+    cmd: python src/models/train_model.py
+    deps:
+    - path: configs/config.yaml
+      hash: md5
+      md5: fde44bbf867e3941406532ed9b9a7bdf
+      size: 5898
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 6dc79d33c57dd2ff877a73f6f63d79bf
+      size: 382715
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 6f4b9906fe619fceb4d44ebbb0bc8095
+      size: 1226517
+    - path: data/processed/validation.csv
+      hash: md5
+      md5: d5faa8a690515f5b6699b7a5efb6e0fb
+      size: 306758
+    - path: src/models/train_model.py
+      hash: md5
+      md5: 6996a0416754cb33de65b1fce417db63
+      size: 18481
+    outs:
+    - path: metrics.json
+      hash: md5
+      md5: 012990a7be4e23e63bb079d3a8101664
+      size: 1082
+    - path: mlruns
+      hash: md5
+      md5: 18a67fb702fb7a1a18c1ef0f894a00b2.dir
+      size: 10199
+      nfiles: 142
+  evaluate_models:
+    cmd: python src/models/evaluate_model.py
+    deps:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 6dc79d33c57dd2ff877a73f6f63d79bf
+      size: 382715
+    - path: mlruns
+      hash: md5
+      md5: 18a67fb702fb7a1a18c1ef0f894a00b2.dir
+      size: 10199
+      nfiles: 142
+    - path: src/models/evaluate_model.py
+      hash: md5
+      md5: 03ad3d8247295f78b918a44a2a60e1f1
+      size: 14509
+    outs:
+    - path: evaluation_metrics.json
+      hash: md5
+      md5: 144a26bab002b94868aff3181f51ccdc
+      size: 1301
+    - path: plots/confusion_matrix.png
+      hash: md5
+      md5: ff3f54b5f9689cbf305449a1289fe87e
+      size: 1663504
+    - path: plots/feature_importance.png
+      hash: md5
+      md5: 292fbaa60977a0854307e4dfa1229c27
+      size: 98406
+    - path: plots/residuals.png
+      hash: md5
+      md5: c5767ceef882870279b4e68c16586c61
+      size: 1650976

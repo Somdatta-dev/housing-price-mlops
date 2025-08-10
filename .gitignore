@@ -363,3 +363,4 @@ core.*
 
 # Application specific
 # Add your application-specific ignores here
+/mlruns

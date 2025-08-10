@@ -66,18 +66,22 @@ def load_best_model():
     """Load the best model from MLflow Model Registry"""
     try:
         # Set MLflow tracking URI
-        mlflow.set_tracking_uri("file:///app/mlruns" if os.path.exists("/app") else "sqlite:///mlflow.db")
+        mlflow.set_tracking_uri("http://localhost:5000")
         
         # Get the latest version of the best model
         client = mlflow.MlflowClient()
         
         # Try to get from model registry first
         try:
-            model_name = "best-housing-model"
+            config = load_config()
+            model_name = config["mlflow"]["model_registry"]["registered_model_name"]
             latest_version = client.get_latest_versions(model_name, stages=["Production"])
             
             if not latest_version:
                 latest_version = client.get_latest_versions(model_name, stages=["Staging"])
+            
+            if not latest_version:
+                latest_version = client.get_latest_versions(model_name)
             
             if latest_version:
                 model_uri = f"models:/{model_name}/{latest_version[0].version}"
@@ -93,7 +97,9 @@ def load_best_model():
             logger.warning(f"Could not load from model registry: {e}")
         
         # Fallback: Load from latest run
-        experiment = mlflow.get_experiment_by_name("housing_price_prediction")
+        config = load_config()
+        experiment_name = config["mlflow"]["experiment_name"]
+        experiment = mlflow.get_experiment_by_name(experiment_name)
         if experiment:
             runs = mlflow.search_runs(
                 experiment_ids=[experiment.experiment_id],

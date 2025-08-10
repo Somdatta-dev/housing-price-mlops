@@ -2,6 +2,7 @@
 Model training module with MLflow experiment tracking
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -466,6 +467,40 @@ def register_best_model(best_model, best_name, best_score):
         logger.error(f"Failed to register model: {e}")
 
 
+def save_metrics_to_file(results, best_name, best_score):
+    """Save metrics to JSON file for DVC tracking"""
+    try:
+        # Prepare metrics for JSON serialization
+        metrics_data = {}
+        
+        # Add best model info
+        metrics_data["best_model"] = {
+            "name": best_name,
+            "val_rmse": float(best_score)
+        }
+        
+        # Add all model results
+        for model_name, (model, metrics) in results.items():
+            model_metrics = {}
+            for key, value in metrics.items():
+                # Convert numpy types to Python types for JSON serialization
+                if isinstance(value, (np.integer, np.floating, np.ndarray)):
+                    model_metrics[key] = float(value)
+                else:
+                    model_metrics[key] = value
+            
+            metrics_data[model_name.lower().replace(" ", "_")] = model_metrics
+        
+        # Save to JSON file
+        with open("metrics.json", "w") as f:
+            json.dump(metrics_data, f, indent=2)
+        
+        logger.info("Metrics saved to metrics.json")
+        
+    except Exception as e:
+        logger.error(f"Failed to save metrics to file: {e}")
+
+
 def main():
     """Main training function"""
     logger.info("Starting model training pipeline...")
@@ -518,6 +553,9 @@ def main():
     # Compare models and select best
     if results:
         best_model, best_name, best_score = compare_models(results)
+
+        # Save metrics to JSON file for DVC
+        save_metrics_to_file(results, best_name, best_score)
 
         # Register best model
         register_best_model(best_model, best_name, best_score)
