@@ -22,50 +22,11 @@ permissions:
   packages: write
 
 jobs:
-  # Only run if CI passed
-  check-ci:
-    runs-on: ubuntu-latest
-    name: Check CI Status
-    outputs:
-      ci-passed: ${{ steps.ci-check.outputs.result }}
-    
-    steps:
-    - name: Check CI workflow status
-      id: ci-check
-      uses: actions/github-script@v6
-      with:
-        script: |
-          console.log('Event name:', context.eventName);
-          console.log('Ref:', context.ref);
-          
-          if (context.eventName === 'push') {
-            console.log('Direct push event - proceeding with deployment');
-            return 'true';
-          }
-          
-          if (context.eventName === 'workflow_run') {
-            console.log('Workflow run event');
-            console.log('Workflow conclusion:', context.payload.workflow_run.conclusion);
-            
-            if (context.payload.workflow_run.conclusion === 'success') {
-              console.log('CI workflow passed - proceeding with deployment');
-              return 'true';
-            } else {
-              console.log('CI workflow failed - skipping deployment');
-              core.setFailed('CI workflow failed');
-              return 'false';
-            }
-          }
-          
-          console.log('Unknown event type - skipping deployment');
-          return 'false';
-
   # Build and push Docker image
   build-and-push:
     runs-on: ubuntu-latest
     name: Build and Push Docker Image
-    needs: check-ci
-    if: needs.check-ci.outputs.ci-passed == 'true'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
@@ -130,6 +91,7 @@ jobs:
     name: Deploy to Staging
     needs: build-and-push
     environment: staging
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     
     steps:
     - name: Checkout code
@@ -169,6 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Security Scan
     needs: build-and-push
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     
     steps:
     - name: Run Trivy vulnerability scanner
