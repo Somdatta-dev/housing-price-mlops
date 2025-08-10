@@ -100,7 +100,7 @@ jobs:
     - name: Deploy to staging
       run: |
         echo "🚀 Deploying to staging environment..."
-        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        echo "Image: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         
         # In a real scenario, this would deploy to a staging environment
         # Examples:
@@ -137,7 +137,7 @@ jobs:
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ needs.build-and-push.outputs.image-tag }}
+        image-ref: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
         format: 'sarif'
         output: 'trivy-results.sarif'
         
@@ -152,7 +152,7 @@ jobs:
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
-        image: ${{ needs.build-and-push.outputs.image-tag }}
+        image: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
         args: --severity-threshold=high
       continue-on-error: true
 
@@ -171,7 +171,7 @@ jobs:
     - name: Deploy to production
       run: |
         echo "🚀 Deploying to production environment..."
-        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        echo "Image: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         
         # In a real scenario, this would deploy to production
         # Examples:
@@ -281,7 +281,7 @@ jobs:
         echo "🎉 Deployment successful!"
         echo "Version: ${{ github.sha }}"
         echo "Environment: Production"
-        echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+        echo "Image: ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         
         # In a real scenario, this would send notifications
         # - Slack notification
